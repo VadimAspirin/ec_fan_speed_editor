@@ -1,0 +1,72 @@
+{
+  "address_file": "ems1583.json",
+  "saveable_params": [
+    "shift_mode",
+    "fan_mode",
+    "usb_power_share",
+    "gpu_fan_speed_t1",
+    "gpu_fan_speed_t2",
+    "gpu_fan_speed_t3",
+    "gpu_fan_speed_t4",
+    "gpu_fan_speed_t5",
+    "gpu_fan_speed_t6",
+    "gpu_fan_speed_t7",
+    "cpu_fan_speed_t1",
+    "cpu_fan_speed_t2",
+    "cpu_fan_speed_t3",
+    "cpu_fan_speed_t4",
+    "cpu_fan_speed_t5",
+    "cpu_fan_speed_t6",
+    "cpu_fan_speed_t7"
+  ],
+  "changeable_params": [
+    "shift_mode",
+    "fan_mode",
+    "usb_power_share",
+    "gpu_fan_speed_t1",
+    "gpu_fan_speed_t2",
+    "gpu_fan_speed_t3",
+    "gpu_fan_speed_t4",
+    "gpu_fan_speed_t5",
+    "gpu_fan_speed_t6",
+    "gpu_fan_speed_t7",
+    "gpu_temp_t1",
+    "gpu_temp_t2",
+    "gpu_temp_t3",
+    "gpu_temp_t4",
+    "gpu_temp_t5",
+    "gpu_temp_t6",
+    "cpu_fan_speed_t1",
+    "cpu_fan_speed_t2",
+    "cpu_fan_speed_t3",
+    "cpu_fan_speed_t4",
+    "cpu_fan_speed_t5",
+    "cpu_fan_speed_t6",
+    "cpu_fan_speed_t7",
+    "cpu_temp_t1",
+    "cpu_temp_t2",
+    "cpu_temp_t3",
+    "cpu_temp_t4",
+    "cpu_temp_t5",
+    "cpu_temp_t6"
+  ],
+  "categorical_params": {
+    "shift_mode": {
+      "0x80": "Off",
+      "0xC2": "Eco",
+      "0xC1": "Comfort",
+      "0xC0": "Sport",
+      "0xC4": "Turbo"
+    },
+    "fan_mode": {
+      "0x0D": "Auto",
+      "0x4D": "Basic",
+      "0x8D": "Advanced",
+      "0x1D": "Silent"
+    },
+    "usb_power_share": {
+      "0x28": "On",
+      "0x08": "Off"
+    }
+  }
+}
