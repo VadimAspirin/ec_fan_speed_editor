@@ -1,4 +1,4 @@
-# ec_fan_speed_editor
+# EC Fan Speed Editor
 
 First of all, the project was created to **adjust the fan speed** of the `MSI GF66 Katana` (Embedded Controller `ems1583`) laptop without having to install and run `MSI Center`.  
 
