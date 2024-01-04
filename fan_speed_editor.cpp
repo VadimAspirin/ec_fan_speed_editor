@@ -17,7 +17,8 @@ using json = nlohmann::json;
 
 struct Config
 {
-    std::map<std::string, int> adresses;
+    std::map<std::string, int> addresses;
+    std::map<std::string, int> addresses_dual;
     std::set<std::string> saveable_params;
     std::set<std::string> changeable_params;
     std::map<std::string, std::map<int, std::string>> categorical_params;
@@ -38,22 +39,34 @@ struct Config
         json addrs = json::parse(adressFile);
 
         for (auto& [key, value] : addrs.items())
-            adresses[std::string(key)] = std::stoul(std::string(value), nullptr, 16);
+        {
+            if (addrs[key].is_array())
+            {
+                assert(addrs[key].size() == 2 && "array type params can only have size equal to two");
+                addresses[std::string(key)] = -2;
+                addresses_dual[std::string(key) + "_b1"] = std::stoul(std::string(value[0]), nullptr, 16);
+                addresses_dual[std::string(key) + "_b2"] = std::stoul(std::string(value[1]), nullptr, 16);
+            }
+            else
+            {
+                addresses[std::string(key)] = std::stoul(std::string(value), nullptr, 16);
+            }
+        }
 
         if (config.contains("saveable_params"))
             for (auto& item : config["saveable_params"])
-                if (adresses.find(std::string(item)) != adresses.end())
+                if (addresses.find(std::string(item)) != addresses.end())
                     saveable_params.insert(std::string(item));
 
         if (config.contains("changeable_params"))
             for (auto& item : config["changeable_params"])
-                if (adresses.find(std::string(item)) != adresses.end())
+                if (addresses.find(std::string(item)) != addresses.end())
                     changeable_params.insert(std::string(item));
 
         if (config.contains("categorical_params"))
             for (auto& [param, categs] : config["categorical_params"].items())
             {
-                if (adresses.find(std::string(param)) == adresses.end())
+                if (addresses.find(std::string(param)) == addresses.end())
                     continue;
 
                 categorical_params[std::string(param)] = std::map<int, std::string>();
@@ -86,20 +99,24 @@ public:
 
     int getParam(std::string param)
     {
-        assert(config->adresses.find(param) != config->adresses.end() && "ERROR: parameter not found");
-        return (int)_ec->readByte(config->adresses[param]);
-    }
-
-    int getParam(std::string param1, std::string param2)
-    {
-        int v1 = getParam(param1);
-        int v2 = getParam(param2);
-        return (v1 << 8) | v2;
+        assert(config->addresses.find(param) != config->addresses.end() && "ERROR: parameter not found");
+        if (config->addresses[param] != -2)
+        {
+            return (int)_ec->readByte(config->addresses[param]);
+        }
+        else
+        {
+            assert(config->addresses_dual.find(param + "_b1") != config->addresses_dual.end() && "ERROR: parameter not found");
+            assert(config->addresses_dual.find(param + "_b2") != config->addresses_dual.end() && "ERROR: parameter not found");
+            int v1 = (int)_ec->readByte(config->addresses_dual[param + "_b1"]);
+            int v2 = (int)_ec->readByte(config->addresses_dual[param + "_b2"]);
+            return (v1 << 8) | v2;
+        }
     }
 
     void setParam(std::string paramName, int paramValue)
     {
-        _ec->writeByte(config->adresses[paramName], (BYTE)paramValue);
+        _ec->writeByte(config->addresses[paramName], (BYTE)paramValue);
     }
 
     static EmbeddedControllerWrapper::Ptr instance()
@@ -116,119 +133,108 @@ public:
     }
 };
 
-class FanSpeedReader
+class FanSpeedEditor
 {
 private:
     EmbeddedControllerWrapper::Ptr _ecw;
 
 public:
-    FanSpeedReader() : _ecw(EmbeddedControllerWrapper::instance())
+    FanSpeedEditor() : _ecw(EmbeddedControllerWrapper::instance())
     {
 
     }
 
     void Show()
     {
-        int cpu_temp = _ecw->getParam("realtime_cpu_temp");
-        int gpu_temp = _ecw->getParam("realtime_gpu_temp");
+        std::set<std::string> used_params;
 
-        int cpu_fan_prc = _ecw->getParam("realtime_cpu_fan_speed");
-        int gpu_fan_prc = _ecw->getParam("realtime_gpu_fan_speed");
+        auto keys_is_exist = [&](std::vector<std::string> param_list) -> bool
+        {
+            for (const auto& p : param_list)
+                if (config->addresses.find(p) == config->addresses.end())
+                    return false;
+            for (const auto& p : param_list)
+                used_params.insert(p);
+            return true;
+        };
 
-        int cpu_fan_t1 = _ecw->getParam("cpu_fan_speed_t1");
-        int cpu_fan_t2 = _ecw->getParam("cpu_fan_speed_t2");
-        int cpu_fan_t3 = _ecw->getParam("cpu_fan_speed_t3");
-        int cpu_fan_t4 = _ecw->getParam("cpu_fan_speed_t4");
-        int cpu_fan_t5 = _ecw->getParam("cpu_fan_speed_t5");
-        int cpu_fan_t6 = _ecw->getParam("cpu_fan_speed_t6");
-        int cpu_fan_t7 = _ecw->getParam("cpu_fan_speed_t7");
+        if(keys_is_exist({ "realtime_cpu_temp" , "realtime_cpu_fan_rpm" , "realtime_cpu_fan_speed" }))
+        {
+            int cpu_temp = _ecw->getParam("realtime_cpu_temp");
+            int cpu_fan = _ecw->getParam("realtime_cpu_fan_rpm");
+            int cpu_fan_prc = _ecw->getParam("realtime_cpu_fan_speed");
 
-        int cpu_temp_t1 = _ecw->getParam("cpu_temp_t1");
-        int cpu_temp_t2 = _ecw->getParam("cpu_temp_t2");
-        int cpu_temp_t3 = _ecw->getParam("cpu_temp_t3");
-        int cpu_temp_t4 = _ecw->getParam("cpu_temp_t4");
-        int cpu_temp_t5 = _ecw->getParam("cpu_temp_t5");
-        int cpu_temp_t6 = _ecw->getParam("cpu_temp_t6");
+            cpu_fan = cpu_fan ? 478000 / cpu_fan : 0;
+            std::cout << "cpu: " << cpu_temp << "C, " << cpu_fan << "rpm (" << cpu_fan_prc << "%)" << std::endl;
+        }
 
-        int gpu_fan_t1 = _ecw->getParam("gpu_fan_speed_t1");
-        int gpu_fan_t2 = _ecw->getParam("gpu_fan_speed_t2");
-        int gpu_fan_t3 = _ecw->getParam("gpu_fan_speed_t3");
-        int gpu_fan_t4 = _ecw->getParam("gpu_fan_speed_t4");
-        int gpu_fan_t5 = _ecw->getParam("gpu_fan_speed_t5");
-        int gpu_fan_t6 = _ecw->getParam("gpu_fan_speed_t6");
-        int gpu_fan_t7 = _ecw->getParam("gpu_fan_speed_t7");
+        if (keys_is_exist({ "realtime_gpu_temp" , "realtime_gpu_fan_rpm" , "realtime_gpu_fan_speed" }))
+        {
+            int gpu_temp = _ecw->getParam("realtime_gpu_temp");
+            int gpu_fan = _ecw->getParam("realtime_gpu_fan_rpm");
+            int gpu_fan_prc = _ecw->getParam("realtime_gpu_fan_speed");
 
-        int gpu_temp_t1 = _ecw->getParam("gpu_temp_t1");
-        int gpu_temp_t2 = _ecw->getParam("gpu_temp_t2");
-        int gpu_temp_t3 = _ecw->getParam("gpu_temp_t3");
-        int gpu_temp_t4 = _ecw->getParam("gpu_temp_t4");
-        int gpu_temp_t5 = _ecw->getParam("gpu_temp_t5");
-        int gpu_temp_t6 = _ecw->getParam("gpu_temp_t6");
+            gpu_fan = gpu_fan ? 478000 / gpu_fan : 0;
+            std::cout << "gpu: " << gpu_temp << "C, " << gpu_fan << "rpm (" << gpu_fan_prc << "%)" << std::endl;
+        }
 
-        int cpu_fan_r = _ecw->getParam("realtime_cpu_fan_rpm_b1", "realtime_cpu_fan_rpm_b2");
-        int cpu_fan = cpu_fan_r ? 478000 / cpu_fan_r : 0;
+        if (keys_is_exist({ "cpu_temp_t1" , "cpu_temp_t2" , "cpu_temp_t3" , "cpu_temp_t4" , "cpu_temp_t5" , "cpu_temp_t6" ,
+            "cpu_fan_speed_t1", "cpu_fan_speed_t2", "cpu_fan_speed_t3", "cpu_fan_speed_t4", "cpu_fan_speed_t5", "cpu_fan_speed_t6", "cpu_fan_speed_t7"}))
+        {
+            std::cout << "cpu_tmp_thr: " << "00C    ";
+            std::cout << _ecw->getParam("cpu_temp_t1") << "C    ";
+            std::cout << _ecw->getParam("cpu_temp_t2") << "C    ";
+            std::cout << _ecw->getParam("cpu_temp_t3") << "C    ";
+            std::cout << _ecw->getParam("cpu_temp_t4") << "C    ";
+            std::cout << _ecw->getParam("cpu_temp_t5") << "C    ";
+            std::cout << _ecw->getParam("cpu_temp_t6") << "C    ";
+            std::cout << std::endl;
 
-        int gpu_fan_r = _ecw->getParam("realtime_gpu_fan_rpm_b1", "realtime_gpu_fan_rpm_b2");
-        int gpu_fan = gpu_fan_r ? 478000 / gpu_fan_r : 0;
+            std::cout << "cpu_fan_thr: " << "    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t1") << "%    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t2") << "%    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t3") << "%    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t4") << "%    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t5") << "%    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t6") << "%    ";
+            std::cout << _ecw->getParam("cpu_fan_speed_t7") << "%    ";
+            std::cout << std::endl;
+        }
 
-        bool gpu_integrated = !gpu_temp ? true : false;
+        if (keys_is_exist({ "gpu_temp_t1" , "gpu_temp_t2" , "gpu_temp_t3" , "gpu_temp_t4" , "gpu_temp_t5" , "gpu_temp_t6" ,
+            "gpu_fan_speed_t1", "gpu_fan_speed_t2", "gpu_fan_speed_t3", "gpu_fan_speed_t4", "gpu_fan_speed_t5", "gpu_fan_speed_t6", "gpu_fan_speed_t7" }))
+        {
+            std::cout << "gpu_tmp_thr: " << "00C    ";
+            std::cout << _ecw->getParam("gpu_temp_t1") << "C    ";
+            std::cout << _ecw->getParam("gpu_temp_t2") << "C    ";
+            std::cout << _ecw->getParam("gpu_temp_t3") << "C    ";
+            std::cout << _ecw->getParam("gpu_temp_t4") << "C    ";
+            std::cout << _ecw->getParam("gpu_temp_t5") << "C    ";
+            std::cout << _ecw->getParam("gpu_temp_t6") << "C    ";
+            std::cout << std::endl;
+
+            std::cout << "gpu_fan_thr: " << "    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t1") << "%    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t2") << "%    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t3") << "%    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t4") << "%    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t5") << "%    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t6") << "%    ";
+            std::cout << _ecw->getParam("gpu_fan_speed_t7") << "%    ";
+            std::cout << std::endl;
+        }
 
         auto& cp = config->categorical_params;
+        for (auto& [k, _] : config->addresses)
+        {
+            if (used_params.find(k) != used_params.end())
+                continue;
 
-        int shft_i = _ecw->getParam("shift_mode");
-        std::string shift_mode = (cp.find("shift_mode") != cp.end() && cp["shift_mode"].find(shft_i) != cp["shift_mode"].end()) ? cp["shift_mode"][shft_i] : "undefined";
-
-        int fnmd_i = _ecw->getParam("fan_mode");
-        std::string fan_mode = (cp.find("fan_mode") != cp.end() && cp["fan_mode"].find(fnmd_i) != cp["fan_mode"].end()) ? cp["fan_mode"][fnmd_i] : "undefined";
-
-        int usbpwr_i = _ecw->getParam("usb_power_share");
-        std::string usb_power_share = (cp.find("usb_power_share") != cp.end() && cp["usb_power_share"].find(usbpwr_i) != cp["usb_power_share"].end()) ? cp["usb_power_share"][usbpwr_i] : "undefined";
-
-        std::cout << "gpu_integrated: " << gpu_integrated << std::endl;
-        std::cout << "cpu: " << cpu_temp << "C, " << cpu_fan << "rpm (" << cpu_fan_prc << "%)" << std::endl;
-        std::cout << "gpu: " << gpu_temp << "C, " << gpu_fan << "rpm (" << gpu_fan_prc << "%)" << std::endl;
-
-        std::cout << "cpu_tmp_thr: " << "00C    ";
-        std::cout << cpu_temp_t1 << "C    ";
-        std::cout << cpu_temp_t2 << "C    ";
-        std::cout << cpu_temp_t3 << "C    ";
-        std::cout << cpu_temp_t4 << "C    ";
-        std::cout << cpu_temp_t5 << "C    ";
-        std::cout << cpu_temp_t6 << "C    ";
-        std::cout << std::endl;
-
-        std::cout << "cpu_fan_thr: " << "    ";
-        std::cout << cpu_fan_t1 << "%    ";
-        std::cout << cpu_fan_t2 << "%    ";
-        std::cout << cpu_fan_t3 << "%    ";
-        std::cout << cpu_fan_t4 << "%    ";
-        std::cout << cpu_fan_t5 << "%    ";
-        std::cout << cpu_fan_t6 << "%    ";
-        std::cout << cpu_fan_t7 << "%    ";
-        std::cout << std::endl;
-
-        std::cout << "gpu_tmp_thr: " << "00C    ";
-        std::cout << gpu_temp_t1 << "C    ";
-        std::cout << gpu_temp_t2 << "C    ";
-        std::cout << gpu_temp_t3 << "C    ";
-        std::cout << gpu_temp_t4 << "C    ";
-        std::cout << gpu_temp_t5 << "C    ";
-        std::cout << gpu_temp_t6 << "C    ";
-        std::cout << std::endl;
-
-        std::cout << "gpu_fan_thr: " << "    ";
-        std::cout << gpu_fan_t1 << "%    ";
-        std::cout << gpu_fan_t2 << "%    ";
-        std::cout << gpu_fan_t3 << "%    ";
-        std::cout << gpu_fan_t4 << "%    ";
-        std::cout << gpu_fan_t5 << "%    ";
-        std::cout << gpu_fan_t6 << "%    ";
-        std::cout << gpu_fan_t7 << "%    ";
-        std::cout << std::endl;
-
-        std::cout << "shift mode: " << shift_mode << std::endl;
-        std::cout << "fan mode: " << fan_mode << std::endl;
-        std::cout << "usb power share: " << usb_power_share << std::endl;
+            int v = _ecw->getParam(k);
+            std::cout << k << ": ";
+            std::cout << ((cp.find(k) != cp.end() && cp[k].find(v) != cp[k].end()) ? cp[k][v] : std::to_string(v));
+            std::cout << std::endl;
+        }
     }
 
     void ShowChangeableParams()
@@ -321,33 +327,33 @@ void PrintUsage()
 
 int main(int argc, char** argv)
 {
-    FanSpeedReader fsr;
+    FanSpeedEditor fse;
 
     if (argc > 1)
     {
         if (!strcmp(argv[1], "-p"))
-            fsr.Show();
+            fse.Show();
         else if (!strcmp(argv[1], "-s") && argc == 3)
-            fsr.Save(argv[2]);
+            fse.Save(argv[2]);
         else if (!strcmp(argv[1], "-s"))
-            fsr.Save();
+            fse.Save();
         else if (!strcmp(argv[1], "-l") && argc == 3)
         {
-            fsr.Load(argv[2]);
-            fsr.Show();
+            fse.Load(argv[2]);
+            fse.Show();
         }
         else if (!strcmp(argv[1], "-l"))
         {
-            fsr.Load();
-            fsr.Show();
+            fse.Load();
+            fse.Show();
         }
         else if (!strcmp(argv[1], "-c") && argc == 4)
         {
-            fsr.SetParam(argv[2], argv[3]);
-            fsr.Show();
+            fse.SetParam(argv[2], argv[3]);
+            fse.Show();
         }
         else if (!strcmp(argv[1], "-pc"))
-            fsr.ShowChangeableParams();
+            fse.ShowChangeableParams();
         else
             PrintUsage();
     }
